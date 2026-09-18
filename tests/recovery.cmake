@@ -1,0 +1,5 @@
+add_executable(tinylsm_recovery_tests tests/recovery_test.cpp)
+target_include_directories(tinylsm_recovery_tests PRIVATE src)
+target_link_libraries(tinylsm_recovery_tests PRIVATE tinylsm)
+add_test(NAME tinylsm_recovery_tests COMMAND tinylsm_recovery_tests)
+set_tests_properties(tinylsm_recovery_tests PROPERTIES TIMEOUT 60)

@@ -1,0 +1,104 @@
+# Out-of-source CMake builds (this repo uses build/, build-release/, build-asan-*,
+# build-cov/, build-fuzz/, build-tsan/, build-compare/, build-wasm/, ...)
+build*/
+cmake-build-*/
+
+# CMake / CTest generated files (in case of an in-source configure)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+CMakeScripts/
+Testing/
+DartConfiguration.tcl
+CPackConfig.cmake
+CPackSourceConfig.cmake
+_CPack_Packages/
+*.cmake.user
+
+# Ninja / Make build files (in-source)
+.ninja_deps
+.ninja_log
+build.ninja
+Makefile.in
+
+# Compiled objects and libraries
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
+*.exp
+*.pdb
+
+# Executables produced by in-source builds (out-of-source builds are already
+# covered by build*/ above)
+tinylsm_tests
+tinylsm_table_tests
+tinylsm_compaction_repro
+tinylsm_compaction_levels
+tinylsm_fault_injection
+tinylsm_crash_acceptance
+tinylsm_recovery_tests
+tinylsm_cli
+tinylsm_bench
+tinylsm_bench_leveldb
+fuzz_*
+
+# Coverage
+*.gcno
+*.gcda
+*.gcov
+*.lcov
+lcov.info
+coverage/
+coverage.info
+
+# libFuzzer findings (seed corpus in corpus/ is kept)
+crash-*
+oom-*
+timeout-*
+leak-*
+fuzz-*.log
+*.profraw
+*.profdata
+default.profdata
+
+# Generated benchmark / verification reports (wasm/site/*.jsonl fixtures stay tracked)
+reports/
+verification-*/
+scratch/
+
+# Emscripten outputs (rebuilt via scripts/build_wasm.sh; site sources stay tracked)
+wasm/site/tinylsm_wasm.js
+wasm/site/tinylsm_wasm.wasm
+
+# Node (wasm site tooling, spec_check / compare scripts)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python artifacts (if any helper scripts grow __pycache__)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.clangd/
+.cache/
+compile_commands.json
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

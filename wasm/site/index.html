@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tinylsm — embedded LSM-tree key-value store in WebAssembly</title>
+<meta name="description" content="Interactive demo of tinylsm: an embedded LSM-tree key-value store with a write-ahead log, concurrent skip-list memtable, Bloom-filtered SSTables, and leveled compaction, running in the browser via WebAssembly.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>tiny<span>lsm</span></h1>
+  <p class="tagline">
+    An embedded, persistent, write-optimized key-value store. This page runs the real
+    C++20 engine compiled to WebAssembly on an in-memory filesystem: the append-only
+    write-ahead log, the concurrent skip-list memtable, prefix-compressed SSTable
+    blocks, Bloom filters, the LRU block cache, and leveled compaction are the same
+    code paths the native build ships.
+  </p>
+  <ul class="badges">
+    <li>C++20 · zero external dependencies</li>
+    <li>CRC32-checksummed WAL</li>
+    <li>skip list p=0.25 · max height 16</li>
+    <li>Bloom filters · 10 bits per key</li>
+    <li>leveled compaction · 10x per level</li>
+    <li>MEMFS · no server</li>
+  </ul>
+</header>
+
+<main>
+  <section>
+    <div class="panel-head">
+      <h2>Interactive terminal</h2>
+      <span class="hint">PUT · GET · DEL · SCAN · SYNC · FLUSH · COMPACT · STATS</span>
+    </div>
+    <div id="screen" class="screen" role="log" aria-live="polite" aria-label="Engine output"></div>
+    <form id="entry" autocomplete="off">
+      <span class="prompt" aria-hidden="true">&gt;</span>
+      <input id="command-line" name="command" type="text" autocomplete="off" spellcheck="false"
+             placeholder='PUT "key" "value"   ·   press Tab to complete, ↑ for history'
+             aria-label="tinylsm command">
+    </form>
+    <div id="toolbar" role="group" aria-label="Load and maintenance controls"></div>
+    <p class="hint">Deep links: <code>?run=PUT%20%22a%22%20%22b%22;SCAN&amp;fill=2000</code></p>
+  </section>
+
+  <section>
+    <div class="panel-head">
+      <h2>LSM structure</h2>
+      <span class="hint">live from STATS</span>
+    </div>
+    <canvas id="visualizer" aria-label="Memtable fill, immutable memtables, and level stacks"></canvas>
+    <dl id="counters"></dl>
+  </section>
+
+  <section class="wide charts">
+    <div class="panel-head">
+      <h2>Benchmarks</h2>
+      <span class="hint">bench/main.cpp · JSONL</span>
+      <div id="chart-legends"></div>
+    </div>
+    <p id="chart-status" class="hint"></p>
+    <div class="span-2">
+      <h3>Latency distribution (log-bucketed)</h3>
+      <canvas id="distribution" aria-label="Latency distribution"></canvas>
+    </div>
+    <div>
+      <h3>p99 latency</h3>
+      <canvas id="percentiles" aria-label="p99 latency by metric"></canvas>
+    </div>
+    <div>
+      <h3>Write throughput</h3>
+      <canvas id="throughput" aria-label="Write throughput"></canvas>
+    </div>
+    <div>
+      <h3>Write amplification</h3>
+      <canvas id="amplification" aria-label="Write amplification"></canvas>
+    </div>
+    <div class="span-2">
+      <h3>Design targets vs measurement</h3>
+      <table>
+        <thead>
+          <tr><th>Metric</th><th>Target</th><th>Measured</th><th>Result</th><th>Conditions</th></tr>
+        </thead>
+        <tbody id="spec-targets"></tbody>
+      </table>
+      <p class="hint">
+        Percentile targets are measured by <code>bench/main.cpp</code> on this machine; the cold-read
+        row drops each SSTable from the page cache with <code>posix_fadvise(POSIX_FADV_DONTNEED)</code>
+        before the read. Add <code>competitors.jsonl</code> (same record shape plus an
+        <code>"engine"</code> field) to overlay another engine measured on the same workload.
+      </p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Design document: section 3 (WAL, MemTable, SSTable, read path, compaction) ·
+  section 6 (crash consistency, fuzzing) · section 7 (this page).
+</footer>
+
+<div id="page-errors" hidden aria-hidden="true"></div>
+<!-- Emscripten's MODULARIZE factory is a classic script that defines the global
+     createTinylsm; app.js picks it up from globalThis. -->
+<script src="tinylsm_wasm.js"></script>
+<script>
+  // Any page error or rejected promise is recorded here so automated browser
+  // checks can assert a clean run instead of scraping the console.
+  addEventListener('error', (event) => {
+    document.getElementById('page-errors').textContent += ` error: ${event.message}`;
+  });
+  addEventListener('unhandledrejection', (event) => {
+    document.getElementById('page-errors').textContent += ` rejection: ${event.reason}`;
+  });
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
