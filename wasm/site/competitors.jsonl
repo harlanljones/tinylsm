@@ -1,5 +1,5 @@
-{"engine":"leveldb","metric":"buffered_put","unit":"us","samples":20000,"p50":0.944,"p90":1.474,"p99":2.706}
-{"engine":"leveldb","metric":"cached_get","unit":"us","samples":20000,"p50":0.352,"p90":0.442,"p99":0.595}
-{"engine":"leveldb","metric":"concurrent_write","threads":4,"ops_per_second":478068}
-{"engine":"leveldb","metric":"sst_write_amplification","ratio":0.13301,"live_ratio":0.13301,"logical_bytes":2.06e+06,"sst_bytes":274000,"definition":"live_sst_bytes/logical_bytes"}
-{"engine":"leveldb","metric":"cold_get","unit":"us","samples":2000,"p50":0.489,"p90":1.201,"p99":1.68}
+{"engine":"leveldb","metric":"buffered_put","unit":"us","samples":20000,"p50":1.329,"p90":2.523,"p99":4.414}
+{"engine":"leveldb","metric":"cached_get","unit":"us","samples":20000,"p50":0.366,"p90":0.506,"p99":0.72}
+{"engine":"leveldb","metric":"concurrent_write","threads":4,"ops_per_second":421286}
+{"engine":"leveldb","metric":"sst_write_amplification","ratio":1.12003,"live_ratio":1.12003,"logical_bytes":2.06e+06,"sst_bytes":2307262,"definition":"live_sst_bytes/logical_bytes"}
+{"engine":"leveldb","metric":"cold_get","unit":"us","samples":2000,"p50":86.391,"p90":107.816,"p99":177.627}

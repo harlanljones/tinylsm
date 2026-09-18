@@ -28,6 +28,15 @@
 using Clock = std::chrono::steady_clock;
 namespace fs = std::filesystem;
 
+namespace leveldb {
+// From util/env_posix_test_helper.h, which LevelDB does not install; the symbol
+// is exported by libleveldb.a, so redeclaring it here with public access links.
+class EnvPosixTestHelper {
+ public:
+  static void SetReadOnlyMMapLimit(int limit);
+};
+}  // namespace leveldb
+
 static bool IsTmpfs(const std::string& path) {
 #if defined(__linux__)
   struct statfs info{};
@@ -64,11 +73,21 @@ static leveldb::Options Tuned(size_t cache_bytes) {
   options.block_size = 4 * 1024;                 // matches Options::block_size_bytes
   options.block_cache = leveldb::NewLRUCache(cache_bytes);
   options.filter_policy = leveldb::NewBloomFilterPolicy(10);
+  // tinylsm stores records uncompressed, so the identical workload disables
+  // LevelDB's Snappy; otherwise byte counts and cold-read sizes are skewed.
+  options.compression = leveldb::kNoCompression;
   return options;
 }
 
 int main(int argc, char** argv) {
   try {
+    // tinylsm reads its SSTables with pread, so posix_fadvise(DONTNEED) really
+    // evicts them from the page cache in the cold-read phase. LevelDB mmaps
+    // table files by default, and fadvise cannot evict pages that still have
+    // live mappings, which would make "cold" LevelDB reads hit the page cache
+    // (and would let cached reads bypass the block cache). Zero the mmap limit
+    // before the default Env is created so both engines read through pread.
+    leveldb::EnvPosixTestHelper::SetReadOnlyMMapLimit(0);
     const size_t n = argc > 1 ? std::stoull(argv[1]) : 20000;
     fs::path path = argc > 2 ? fs::path(argv[2])
                              : fs::temp_directory_path() / ("leveldb-bench-" + std::to_string(getpid()));
@@ -129,8 +148,10 @@ int main(int argc, char** argv) {
               << ",\"live_ratio\":" << live / logical << ",\"logical_bytes\":" << logical << ",\"sst_bytes\":" << live
               << ",\"definition\":\"live_sst_bytes/logical_bytes\"}\n";
 
-    // Cold reads: a second handle with a 1-byte block cache plus page-cache
-    // eviction, mirroring the tinylsm cold-read protocol.
+    // Cold reads: a second handle measured with fill_cache=false (cacheless
+    // reads) plus page-cache eviction, mirroring the tinylsm cold-read
+    // protocol; mmap reads are disabled at the top of main so the eviction
+    // can actually reach the pages.
     db.reset();
     std::vector<std::string> sstables;
     for (auto& entry : fs::directory_iterator(path))
@@ -152,11 +173,17 @@ int main(int argc, char** argv) {
       std::unique_ptr<leveldb::DB> cold(cold_raw);
       const size_t count = std::min<size_t>(n, 2000);
       std::vector<double> cold_samples;
+      // fill_cache=false makes the read path cacheless, matching tinylsm's
+      // capacity-1 block cache. A tiny LRUCache alone is not enough: LevelDB
+      // only evicts on Insert, so the most recent block stays resident and
+      // sequential cold keys would keep hitting it through Lookup.
+      leveldb::ReadOptions cold_read;
+      cold_read.fill_cache = false;
       for (size_t i = 0; i < count && !fds.empty(); ++i) {
         for (int fd : fds) ::posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
         auto& key = keys[(i * sstables.size()) % n];
         auto begin = Clock::now();
-        if (!cold->Get(leveldb::ReadOptions(), key, &read).ok()) throw std::runtime_error("leveldb cold get");
+        if (!cold->Get(cold_read, key, &read).ok()) throw std::runtime_error("leveldb cold get");
         cold_samples.push_back(std::chrono::duration<double, std::micro>(Clock::now() - begin).count());
       }
       for (int fd : fds) ::close(fd);
