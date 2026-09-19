@@ -52,5 +52,11 @@ the WAL and the `MANIFEST` exactly as a process restart does on disk.
 * **Visualizer** — live MemTable fill, immutable MemTables, the Level 0..N
   stacks, cache hit ratio, and flush/compaction counters, drawn from `STATS`.
 * **Charts** — latency distributions (log-bucketed histograms), throughput, and
-  write amplification, read from `benchmark.jsonl`. Add `competitors.jsonl`
-  with the same record shape plus an `"engine"` field to overlay other engines.
+  write amplification, read from `benchmark.jsonl` (the buffered microbenchmark).
+  Add `competitors.jsonl` with the same record shape plus an `"engine"` field to
+  overlay other engines on that same workload.
+* **Rigorous report** — `scripts/bench_rigorous.sh` stages `rigorous.jsonl` and
+  `rigorous_env.json` next to the site. Those are the fsync-priced, shuffled,
+  three-engine numbers (tinylsm / LevelDB / LMDB); they are not plotted here.
+  Print them with `node scripts/rigorous_table.mjs wasm/site/rigorous.jsonl
+  wasm/site/rigorous_env.json`.

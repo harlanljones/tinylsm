@@ -1,0 +1,13 @@
+{
+  "date_utc": "2026-09-19T04:25:22Z",
+  "git_sha": "9389fbdebcf9c24704ff2d2e2b96fbc69df5aff7",
+  "git_dirty": " M README.md;A  bench/rigorous.cpp;A  bench/rigorous_leveldb.cpp;AM scripts/bench_rigorous.sh;AM scripts/rigorous_table.mjs;",
+  "uname": "Linux omarchy 7.2.5-4-omarchy #1 SMP PREEMPT_DYNAMIC Wed, 16 Sep 2026 04:45:18 +0000 x86_64 GNU/Linux",
+  "cpu": "Intel(R) Core(TM) i7-14700K",
+  "fstype": "btrfs",
+  "mount_opts": "rw,relatime,compress=zstd:3,ssd,space_cache=v2,subvolid=257,subvol=/@home",
+  "build_type": "Release",
+  "ops": 20000,
+  "trials": 3,
+  "workload": "durable_put(shuffled) random_get(uniform) cold_get(random,evicted) read_under_write(2s) scan reopen write_amp(iterator-scanned)"
+}

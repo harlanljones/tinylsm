@@ -1,7 +1,7 @@
 #include "engine.hpp"
 namespace tinylsm::detail {
 Status Engine::Manifest(const std::vector<uint64_t>& wals,const std::vector<std::shared_ptr<Table>>& tables) {
-  std::string body="TLSMMAN1";Number(body,stamp_,8);Number(body,wals.size(),4);Number(body,tables.size(),4);
+  std::string body="TLSMMAN1";Number(body,stamp_.load(std::memory_order_relaxed),8);Number(body,wals.size(),4);Number(body,tables.size(),4);
   for(auto id:wals) Number(body,id,8);
   for(auto& t:tables) {Number(body,t->id,8);Number(body,t->level,4);}
   Number(body,CRC(body),4);
@@ -20,7 +20,7 @@ Status Engine::Load() {
   if(std::filesystem::exists(path,ec)) {
     std::string bytes;if(!ReadFile(path,bytes))return Status::IOError;if(bytes.size()<28||bytes.substr(0,8)!="TLSMMAN1")return Status::Corruption;
     std::string_view view(bytes);auto tail=view.substr(view.size()-4);uint64_t crc;Number(tail,crc,4);view.remove_suffix(4);if(CRC(view)!=crc)return Status::Corruption;
-    view.remove_prefix(8);uint64_t nw,nt;if(!Number(view,stamp_,8)||!Number(view,nw,4)||!Number(view,nt,4)||nw>view.size()/8||nt>(view.size()-nw*8)/12||view.size()!=nw*8+nt*12||nw==0)return Status::Corruption;
+    view.remove_prefix(8);uint64_t nw,nt;{uint64_t t;if(!Number(view,t,8))return Status::Corruption;stamp_.store(t,std::memory_order_relaxed);}if(!Number(view,nw,4)||!Number(view,nt,4)||nw>view.size()/8||nt>(view.size()-nw*8)/12||view.size()!=nw*8+nt*12||nw==0)return Status::Corruption;
     for(uint64_t i=0;i<nw;++i){uint64_t id;if(!Number(view,id,8)||!id||std::find(wals_.begin(),wals_.end(),id)!=wals_.end())return Status::Corruption;wals_.push_back(id);if(id+1>next_id_.load())next_id_.store(id+1);}
     for(uint64_t i=0;i<nt;++i){uint64_t id,level;if(!Number(view,id,8)||!Number(view,level,4)||!id||level>63)return Status::Corruption;for(auto& t:tables_)if(t->id==id)return Status::Corruption;
       std::shared_ptr<Table> t;auto s=Table::Open(Path(id,".sst"),id,static_cast<unsigned>(level),t);if(s!=Status::Ok)return s;tables_.push_back(t);if(id+1>next_id_.load())next_id_.store(id+1);}
@@ -29,9 +29,9 @@ Status Engine::Load() {
   // Replay only manifest-referenced WALs; interrupted unpublished files are orphans.
   for(auto id:wals_) {
     std::string data;if(!ReadFile(Path(id,".wal"),data))return Status::IOError;std::vector<Record> rows;size_t used;auto s=Decode(data,rows,used);if(s!=Status::Ok)return s;
-    auto mem=std::make_shared<MemTable>();uint64_t previous=0;for(auto& r:rows){if(r.stamp<=previous)return Status::Corruption;previous=r.stamp;stamp_=std::max(stamp_,r.stamp);mem->Put(std::move(r));}pending_.push_back({id,mem});
+    auto mem=std::make_shared<MemTable>();uint64_t previous=0;for(auto& r:rows){if(r.stamp<=previous)return Status::Corruption;previous=r.stamp;stamp_.store(std::max(stamp_.load(std::memory_order_relaxed),r.stamp),std::memory_order_relaxed);mem->Put(std::move(r));}pending_.push_back({id,mem});
   }
-  stamp_=std::max(stamp_,NowNanos());
+  stamp_.store(std::max(stamp_.load(std::memory_order_relaxed),NowNanos()),std::memory_order_relaxed);
   active_wal_=next_id_++;wal_=::open(Path(active_wal_,".wal").c_str(),O_CREAT|O_EXCL|O_WRONLY|O_APPEND,0644);if(wal_<0||!Durable(wal_)||!SyncDirectory(options_.db_path))return Status::IOError;
   auto wals=wals_;wals.push_back(active_wal_);auto s=Manifest(wals,tables_);if(s!=Status::Ok)return s;wals_=std::move(wals);
   // Clean only numeric storage artifacts not referenced by the durable manifest.
@@ -42,6 +42,7 @@ Status Engine::Load() {
     for(auto& t:tables_) {live=live||entry.path()==t->path;}
     if(!live)std::filesystem::remove(entry.path(),ec);
   }
+  Publish();
   return Status::Ok;
 }
 Status Engine::Init() {

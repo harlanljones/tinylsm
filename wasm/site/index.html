@@ -88,7 +88,9 @@
         Percentile targets are measured by <code>bench/main.cpp</code> on this machine; the cold-read
         row drops each SSTable from the page cache with <code>posix_fadvise(POSIX_FADV_DONTNEED)</code>
         before the read. Add <code>competitors.jsonl</code> (same record shape plus an
-        <code>"engine"</code> field) to overlay another engine measured on the same workload.
+        <code>"engine"</code> field) to overlay another engine on the same buffered workload.
+        The fsync-priced three-engine run lives in <code>rigorous.jsonl</code>
+        (tinylsm / LevelDB / LMDB) and is printed by <code>scripts/rigorous_table.mjs</code>, not these charts.
       </p>
     </div>
   </section>

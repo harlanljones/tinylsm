@@ -1,0 +1,72 @@
+{"engine":"tinylsm","trial":0,"metric":"env","ops":20000,"memtable_bytes":1048576,"block_cache_bytes":67108864,"block_bytes":4096,"value_bytes":100,"timer_overhead_ns":10,"timer_resolution_ns":1}
+{"engine":"tinylsm","trial":0,"metric":"durable_put","unit":"us","samples":20000,"mean":776.142,"max":233684,"p50":655.372,"p90":940.606,"p99":4290.68,"p999":9850.9,"ops_per_second":1288.42}
+{"engine":"tinylsm","trial":0,"metric":"random_get","unit":"us","samples":20000,"mean":0.291212,"max":8.234,"p50":0.275,"p90":0.364,"p99":0.54,"p999":1.031}
+{"engine":"tinylsm","trial":0,"metric":"cold_get","unit":"us","samples":2000,"mean":72.8598,"max":501.756,"p50":70.851,"p90":86.851,"p99":119.022,"p999":411.247}
+{"engine":"tinylsm","trial":0,"metric":"read_under_write","unit":"us","samples":3188977,"mean":0.591277,"max":996.555,"p50":0.542,"p90":0.793,"p99":1.757,"p999":6.297,"ops_per_second":298991,"note":"writer=buffered"}
+{"engine":"tinylsm","trial":0,"metric":"scan","records":20000,"total_ms":14.531,"ns_per_key":726.552}
+{"engine":"tinylsm","trial":0,"metric":"reopen","reopen_ms":3.07614,"verify_gets":1000}
+{"engine":"tinylsm","trial":0,"metric":"write_amp","live_ratio":1.08751,"live_records":20000,"live_logical_bytes":2220000,"live_sst_bytes":2414264,"definition":"live_sst_bytes/live_logical_bytes (iterator-scanned, identical for both engines)"}
+{"engine":"leveldb","trial":0,"metric":"env","ops":20000,"memtable_bytes":1048576,"block_cache_bytes":67108864,"block_bytes":4096,"value_bytes":100,"timer_overhead_ns":10,"timer_resolution_ns":1}
+{"engine":"leveldb","trial":0,"metric":"durable_put","unit":"us","samples":20000,"mean":2621.57,"max":161436,"p50":649.503,"p90":2304.15,"p99":42032.9,"p999":87942.7,"ops_per_second":381.451}
+{"engine":"leveldb","trial":0,"metric":"random_get","unit":"us","samples":20000,"mean":0.492135,"max":5.63,"p50":0.461,"p90":0.64,"p99":0.955,"p999":1.65}
+{"engine":"leveldb","trial":0,"metric":"cold_get","unit":"us","samples":2000,"mean":104.152,"max":2496.59,"p50":91.034,"p90":130.109,"p99":446.898,"p999":1780.06}
+{"engine":"leveldb","trial":0,"metric":"read_under_write","unit":"us","samples":1562653,"mean":1.23615,"max":1791.69,"p50":1.034,"p90":2.129,"p99":4.92,"p999":9.195,"ops_per_second":448651,"note":"writer=buffered"}
+{"engine":"leveldb","trial":0,"metric":"scan","records":20000,"total_ms":6.19532,"ns_per_key":309.766}
+{"engine":"leveldb","trial":0,"metric":"reopen","reopen_ms":6.73616,"verify_gets":1000}
+{"engine":"leveldb","trial":0,"metric":"write_amp","live_ratio":1.04369,"live_records":20000,"live_logical_bytes":2220000,"live_sst_bytes":2316981,"definition":"live_sst_bytes/live_logical_bytes (iterator-scanned, identical for both engines)"}
+{"engine":"lmdb","trial":0,"metric":"env","ops":20000,"memtable_bytes":1048576,"block_cache_bytes":67108864,"block_bytes":4096,"value_bytes":100,"timer_overhead_ns":12,"timer_resolution_ns":1}
+{"engine":"lmdb","trial":0,"metric":"durable_put","unit":"us","samples":20000,"mean":2544.13,"max":286948,"p50":775.729,"p90":1128.58,"p99":41710.5,"p999":119141,"ops_per_second":393.062}
+{"engine":"lmdb","trial":0,"metric":"random_get","unit":"us","samples":20000,"mean":0.215786,"max":6.775,"p50":0.204,"p90":0.267,"p99":0.451,"p999":0.71}
+{"engine":"lmdb","trial":0,"metric":"cold_get","unit":"us","samples":200,"mean":543.441,"max":916.602,"p50":514.531,"p90":713.102,"p99":840.521,"p999":916.602,"note":"cold=fresh_copy_on_disk"}
+{"engine":"lmdb","trial":0,"metric":"read_under_write","unit":"us","samples":7067220,"mean":0.247809,"max":84.705,"p50":0.227,"p90":0.338,"p99":0.512,"p999":0.732,"ops_per_second":148037,"note":"writer=buffered"}
+{"engine":"lmdb","trial":0,"metric":"scan","records":20000,"total_ms":0.371015,"ns_per_key":18.5508}
+{"engine":"lmdb","trial":0,"metric":"reopen","reopen_ms":0.166145,"verify_gets":1000}
+{"engine":"lmdb","trial":0,"metric":"write_amp","live_ratio":1.77309,"live_records":20000,"live_logical_bytes":2220000,"live_sst_bytes":3936256,"definition":"live_db_bytes/live_logical_bytes (iterator-scanned, identical for all engines)"}
+{"engine":"tinylsm","trial":1,"metric":"env","ops":20000,"memtable_bytes":1048576,"block_cache_bytes":67108864,"block_bytes":4096,"value_bytes":100,"timer_overhead_ns":16,"timer_resolution_ns":1}
+{"engine":"tinylsm","trial":1,"metric":"durable_put","unit":"us","samples":20000,"mean":685.281,"max":23950.9,"p50":619.221,"p90":894.748,"p99":1714.98,"p999":5429.69,"ops_per_second":1459.25}
+{"engine":"tinylsm","trial":1,"metric":"random_get","unit":"us","samples":20000,"mean":0.272658,"max":8.914,"p50":0.263,"p90":0.318,"p99":0.467,"p999":1.015}
+{"engine":"tinylsm","trial":1,"metric":"cold_get","unit":"us","samples":2000,"mean":67.9831,"max":431.122,"p50":64.654,"p90":80.341,"p99":113.439,"p999":405.358}
+{"engine":"tinylsm","trial":1,"metric":"read_under_write","unit":"us","samples":3207371,"mean":0.587541,"max":1037.71,"p50":0.54,"p90":0.788,"p99":1.634,"p999":6.219,"ops_per_second":301047,"note":"writer=buffered"}
+{"engine":"tinylsm","trial":1,"metric":"scan","records":20000,"total_ms":5.84797,"ns_per_key":292.398}
+{"engine":"tinylsm","trial":1,"metric":"reopen","reopen_ms":3.7046,"verify_gets":1000}
+{"engine":"tinylsm","trial":1,"metric":"write_amp","live_ratio":1.08751,"live_records":20000,"live_logical_bytes":2220000,"live_sst_bytes":2414264,"definition":"live_sst_bytes/live_logical_bytes (iterator-scanned, identical for both engines)"}
+{"engine":"leveldb","trial":1,"metric":"env","ops":20000,"memtable_bytes":1048576,"block_cache_bytes":67108864,"block_bytes":4096,"value_bytes":100,"timer_overhead_ns":16,"timer_resolution_ns":1}
+{"engine":"leveldb","trial":1,"metric":"durable_put","unit":"us","samples":20000,"mean":6250.59,"max":195424,"p50":616.565,"p90":25306.6,"p99":78329.3,"p999":117414,"ops_per_second":159.985}
+{"engine":"leveldb","trial":1,"metric":"random_get","unit":"us","samples":20000,"mean":0.44385,"max":4.234,"p50":0.434,"p90":0.521,"p99":0.676,"p999":1.567}
+{"engine":"leveldb","trial":1,"metric":"cold_get","unit":"us","samples":2000,"mean":67.9569,"max":452.747,"p50":64.261,"p90":83.184,"p99":112.074,"p999":407.974}
+{"engine":"leveldb","trial":1,"metric":"read_under_write","unit":"us","samples":1980595,"mean":0.971556,"max":374.219,"p50":0.911,"p90":1.53,"p99":3.15,"p999":6.221,"ops_per_second":558582,"note":"writer=buffered"}
+{"engine":"leveldb","trial":1,"metric":"scan","records":20000,"total_ms":6.37639,"ns_per_key":318.82}
+{"engine":"leveldb","trial":1,"metric":"reopen","reopen_ms":5.92351,"verify_gets":1000}
+{"engine":"leveldb","trial":1,"metric":"write_amp","live_ratio":1.04369,"live_records":20000,"live_logical_bytes":2220000,"live_sst_bytes":2316981,"definition":"live_sst_bytes/live_logical_bytes (iterator-scanned, identical for both engines)"}
+{"engine":"lmdb","trial":1,"metric":"env","ops":20000,"memtable_bytes":1048576,"block_cache_bytes":67108864,"block_bytes":4096,"value_bytes":100,"timer_overhead_ns":10,"timer_resolution_ns":1}
+{"engine":"lmdb","trial":1,"metric":"durable_put","unit":"us","samples":20000,"mean":839.871,"max":28684.9,"p50":773.573,"p90":1043.68,"p99":2138.58,"p999":6888.27,"ops_per_second":1190.66}
+{"engine":"lmdb","trial":1,"metric":"random_get","unit":"us","samples":20000,"mean":0.274091,"max":12.779,"p50":0.275,"p90":0.344,"p99":0.475,"p999":0.674}
+{"engine":"lmdb","trial":1,"metric":"cold_get","unit":"us","samples":200,"mean":519.53,"max":1932.02,"p50":480.863,"p90":673.377,"p99":1006.56,"p999":1932.02,"note":"cold=fresh_copy_on_disk"}
+{"engine":"lmdb","trial":1,"metric":"read_under_write","unit":"us","samples":7310764,"mean":0.239244,"max":35.08,"p50":0.221,"p90":0.322,"p99":0.482,"p999":0.637,"ops_per_second":153431,"note":"writer=buffered"}
+{"engine":"lmdb","trial":1,"metric":"scan","records":20000,"total_ms":0.470949,"ns_per_key":23.5475}
+{"engine":"lmdb","trial":1,"metric":"reopen","reopen_ms":0.173048,"verify_gets":1000}
+{"engine":"lmdb","trial":1,"metric":"write_amp","live_ratio":1.72143,"live_records":20000,"live_logical_bytes":2220000,"live_sst_bytes":3821568,"definition":"live_db_bytes/live_logical_bytes (iterator-scanned, identical for all engines)"}
+{"engine":"tinylsm","trial":2,"metric":"env","ops":20000,"memtable_bytes":1048576,"block_cache_bytes":67108864,"block_bytes":4096,"value_bytes":100,"timer_overhead_ns":10,"timer_resolution_ns":1}
+{"engine":"tinylsm","trial":2,"metric":"durable_put","unit":"us","samples":20000,"mean":1118.29,"max":1.10497e+06,"p50":630.216,"p90":995.08,"p99":15703.2,"p999":38451.6,"ops_per_second":894.223}
+{"engine":"tinylsm","trial":2,"metric":"random_get","unit":"us","samples":20000,"mean":0.268784,"max":3.917,"p50":0.264,"p90":0.311,"p99":0.373,"p999":0.591}
+{"engine":"tinylsm","trial":2,"metric":"cold_get","unit":"us","samples":2000,"mean":92.4317,"max":2315.66,"p50":80.928,"p90":114.061,"p99":203.111,"p999":1944.84}
+{"engine":"tinylsm","trial":2,"metric":"read_under_write","unit":"us","samples":3076225,"mean":0.613141,"max":1070.19,"p50":0.562,"p90":0.844,"p99":1.583,"p999":6.678,"ops_per_second":245736,"note":"writer=buffered"}
+{"engine":"tinylsm","trial":2,"metric":"scan","records":20000,"total_ms":63.336,"ns_per_key":3166.8}
+{"engine":"tinylsm","trial":2,"metric":"reopen","reopen_ms":3.78177,"verify_gets":1000}
+{"engine":"tinylsm","trial":2,"metric":"write_amp","live_ratio":1.08751,"live_records":20000,"live_logical_bytes":2220000,"live_sst_bytes":2414264,"definition":"live_sst_bytes/live_logical_bytes (iterator-scanned, identical for both engines)"}
+{"engine":"leveldb","trial":2,"metric":"env","ops":20000,"memtable_bytes":1048576,"block_cache_bytes":67108864,"block_bytes":4096,"value_bytes":100,"timer_overhead_ns":16,"timer_resolution_ns":1}
+{"engine":"leveldb","trial":2,"metric":"durable_put","unit":"us","samples":20000,"mean":6409.64,"max":144162,"p50":782.352,"p90":25190.5,"p99":60092.1,"p999":92880.4,"ops_per_second":156.015}
+{"engine":"leveldb","trial":2,"metric":"random_get","unit":"us","samples":20000,"mean":0.529904,"max":17.837,"p50":0.496,"p90":0.706,"p99":0.928,"p999":1.575}
+{"engine":"leveldb","trial":2,"metric":"cold_get","unit":"us","samples":2000,"mean":97.5251,"max":1625.22,"p50":85.349,"p90":140.725,"p99":239.085,"p999":597.966}
+{"engine":"leveldb","trial":2,"metric":"read_under_write","unit":"us","samples":1578238,"mean":1.22437,"max":1620.07,"p50":1.038,"p90":2.119,"p99":4.49,"p999":9.256,"ops_per_second":484263,"note":"writer=buffered"}
+{"engine":"leveldb","trial":2,"metric":"scan","records":20000,"total_ms":6.3134,"ns_per_key":315.67}
+{"engine":"leveldb","trial":2,"metric":"reopen","reopen_ms":6.45297,"verify_gets":1000}
+{"engine":"leveldb","trial":2,"metric":"write_amp","live_ratio":1.04369,"live_records":20000,"live_logical_bytes":2220000,"live_sst_bytes":2316981,"definition":"live_sst_bytes/live_logical_bytes (iterator-scanned, identical for both engines)"}
+{"engine":"lmdb","trial":2,"metric":"env","ops":20000,"memtable_bytes":1048576,"block_cache_bytes":67108864,"block_bytes":4096,"value_bytes":100,"timer_overhead_ns":16,"timer_resolution_ns":1}
+{"engine":"lmdb","trial":2,"metric":"durable_put","unit":"us","samples":20000,"mean":989.651,"max":56857.3,"p50":886.526,"p90":1267.41,"p99":2659.07,"p999":9718.72,"ops_per_second":1010.46}
+{"engine":"lmdb","trial":2,"metric":"random_get","unit":"us","samples":20000,"mean":0.223148,"max":21.978,"p50":0.21,"p90":0.261,"p99":0.436,"p999":1.736}
+{"engine":"lmdb","trial":2,"metric":"cold_get","unit":"us","samples":200,"mean":505.674,"max":3856.43,"p50":454.108,"p90":620.896,"p99":1668,"p999":3856.43,"note":"cold=fresh_copy_on_disk"}
+{"engine":"lmdb","trial":2,"metric":"read_under_write","unit":"us","samples":7456099,"mean":0.233912,"max":47.159,"p50":0.219,"p90":0.307,"p99":0.449,"p999":0.628,"ops_per_second":154573,"note":"writer=buffered"}
+{"engine":"lmdb","trial":2,"metric":"scan","records":20000,"total_ms":0.491421,"ns_per_key":24.571}
+{"engine":"lmdb","trial":2,"metric":"reopen","reopen_ms":0.195969,"verify_gets":1000}
+{"engine":"lmdb","trial":2,"metric":"write_amp","live_ratio":1.72143,"live_records":20000,"live_logical_bytes":2220000,"live_sst_bytes":3821568,"definition":"live_db_bytes/live_logical_bytes (iterator-scanned, identical for all engines)"}
