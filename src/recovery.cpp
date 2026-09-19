@@ -32,7 +32,7 @@ Status Engine::Load() {
     auto mem=std::make_shared<MemTable>();uint64_t previous=0;for(auto& r:rows){if(r.stamp<=previous)return Status::Corruption;previous=r.stamp;stamp_.store(std::max(stamp_.load(std::memory_order_relaxed),r.stamp),std::memory_order_relaxed);mem->Put(std::move(r));}pending_.push_back({id,mem});
   }
   stamp_.store(std::max(stamp_.load(std::memory_order_relaxed),NowNanos()),std::memory_order_relaxed);
-  active_wal_=next_id_++;wal_=::open(Path(active_wal_,".wal").c_str(),O_CREAT|O_EXCL|O_WRONLY|O_APPEND,0644);if(wal_<0||!Durable(wal_)||!SyncDirectory(options_.db_path))return Status::IOError;
+  active_wal_=next_id_++;wal_=CreateWal(active_wal_);if(wal_<0||!Durable(wal_)||!SyncDirectory(options_.db_path))return Status::IOError;
   auto wals=wals_;wals.push_back(active_wal_);auto s=Manifest(wals,tables_);if(s!=Status::Ok)return s;wals_=std::move(wals);
   // Clean only numeric storage artifacts not referenced by the durable manifest.
   for(auto& entry:std::filesystem::directory_iterator(options_.db_path)) {

@@ -75,8 +75,20 @@ inline std::string Encode(const Record& r) {
   std::string out; Number(out,CRC(body),4); out+=body; return out;
 }
 // A short suffix is an interrupted append; a complete invalid record is corruption.
+// Pre-sized WAL segments also end in unwritten zeros: an all-zero remainder is
+// clean EOF, not corruption — a valid record always carries a nonzero stamp,
+// so 19 zero bytes can never be a record header. (A nonzero tail after zeros,
+// or zeros followed by data, stays Corruption.)
 inline Status Decode(std::string_view s,std::vector<Record>& rows,size_t& consumed) {
-  consumed=0; while(!s.empty()) { auto before=s; uint64_t crc,stamp,type,kl,vl;
+  consumed=0; while(!s.empty()) {
+    if(s.size()>=19) {
+      static constexpr char kZero[19]={};
+      if(std::memcmp(s.data(),kZero,19)==0) {
+        for(char c:s.substr(19)) if(c) return Status::Corruption;
+        return Status::Ok;
+      }
+    }
+    auto before=s; uint64_t crc,stamp,type,kl,vl;
     if(!Number(s,crc,4)||!Number(s,stamp,8)||!Number(s,type,1)||!Number(s,kl,2)||s.size()<kl) return Status::Ok;
     Record r; r.stamp=stamp; r.deleted=type==0; r.key.assign(s.substr(0,kl)); s.remove_prefix(kl);
     if(!Number(s,vl,4)||s.size()<vl) return Status::Ok;
@@ -87,6 +99,17 @@ inline Status Decode(std::string_view s,std::vector<Record>& rows,size_t& consum
   } return Status::Ok;
 }
 inline bool WriteAll(int fd,std::string_view s) { while(!s.empty()) { ssize_t n=::write(fd,s.data(),s.size()); if(n<0&&errno==EINTR) continue; if(n<=0) return false; s.remove_prefix(static_cast<size_t>(n)); } return true; }
+// Positional append for pre-sized WAL segments: the file size is fixed at
+// creation, so every put overwrites already-allocated space instead of
+// extending i_size — on rotational media that is the difference between a
+// ~500us and a ~1200us fdatasync (measured). Returns false on overflow so the
+// caller can grow the segment (a safety valve that never fires: segment
+// capacity always exceeds the memtable that bounds the segment's contents).
+inline bool WriteAt(int fd,uint64_t offset,std::string_view s,uint64_t capacity) {
+  if(offset+s.size()>capacity) return false;
+  while(!s.empty()) { ssize_t n=::pwrite(fd,s.data(),s.size(),static_cast<off_t>(offset)); if(n<0&&errno==EINTR) continue; if(n<=0) return false; s.remove_prefix(static_cast<size_t>(n)); offset+=static_cast<uint64_t>(n); }
+  return true;
+}
 inline bool ReadFile(const std::string& path,std::string& out) {
   int fd=::open(path.c_str(),O_RDONLY); if(fd<0) return false; char buf[65536]; out.clear(); bool ok=true;
   for(;;) { ssize_t n=::read(fd,buf,sizeof buf); if(n<0&&errno==EINTR) continue; if(n<0) {ok=false;break;} if(!n) break; out.append(buf,static_cast<size_t>(n)); } ::close(fd); return ok;
@@ -143,18 +166,28 @@ class MemTable {
     const Node* p=&head_; for(int h=15;h>=0;--h) { Node* n; while((n=p->next[h].load(std::memory_order_acquire))&&n->row.key<key) p=n; }
     const Node* n=p->next[0].load(std::memory_order_acquire); if(!n||n->row.key!=key) return false; out=n->row; return true;
   }
+  // Forward cursor over the level-0 chain for the lazy merge iterator. Reads
+  // use acquire loads, so traversal is safe under the single concurrent
+  // writer — the same guarantee Get() already relies on.
+  class Cursor {
+    const Node* head_=nullptr;
+    const Node* node_=nullptr;
+   public:
+    Cursor()=default;
+    explicit Cursor(const Node* head):head_(head) {}
+    void SeekToFirst() {node_=head_?head_->next[0].load(std::memory_order_acquire):nullptr;}
+    void Seek(std::string_view key) {
+      if(!head_) {node_=nullptr;return;}
+      const Node* p=head_;
+      for(int h=15;h>=0;--h) {Node* n;while((n=p->next[h].load(std::memory_order_acquire))&&n->row.key<key)p=n;}
+      node_=p->next[0].load(std::memory_order_acquire);
+    }
+    void Next() {if(node_)node_=node_->next[0].load(std::memory_order_acquire);}
+    bool Valid() const {return node_!=nullptr;}
+    const Record& Row() const {return node_->row;}
+    Status status() const {return Status::Ok;}
+  };
+  Cursor NewCursor() const {return Cursor(&head_);}
   std::vector<Record> Rows() const { std::vector<Record> out; for(Node* n=head_.next[0].load();n;n=n->next[0].load()) if(out.empty()||out.back().key!=n->row.key) out.push_back(n->row); return out; }
-};
-class Snapshot final:public DB::Iterator {
-  std::vector<Record> rows_; size_t pos_=0; Status status_;
- public:
-  Snapshot(std::vector<Record> rows,Status s):rows_(std::move(rows)),status_(s) { std::erase_if(rows_,[](auto& r){return r.deleted;}); }
-  bool Valid() const override { return status_==Status::Ok&&pos_<rows_.size(); }
-  void SeekToFirst() override {pos_=0;}
-  void Seek(std::string_view k) override {pos_=static_cast<size_t>(std::lower_bound(rows_.begin(),rows_.end(),k,[](auto& r,auto key){return r.key<key;})-rows_.begin());}
-  void Next() override {if(Valid()) ++pos_;}
-  std::string_view Key() const override {return Valid()?rows_[pos_].key:std::string_view{};}
-  std::string_view Value() const override {return Valid()?rows_[pos_].value:std::string_view{};}
-  Status status() const override {return status_;}
 };
 } // namespace tinylsm::detail

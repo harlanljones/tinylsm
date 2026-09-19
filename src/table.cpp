@@ -35,11 +35,18 @@ Status Table::Open(const std::string& path,uint64_t id,unsigned level,std::share
   ::posix_fadvise(t->fd_,0,0,POSIX_FADV_RANDOM);
 #endif
   auto size=::lseek(t->fd_,0,SEEK_END);if(size<48) return Status::Corruption;t->bytes=static_cast<uint64_t>(size);
+  // The trailer [filter | index | footer(48)] is contiguous by construction
+  // (Build writes them back to back), so one pread fetches all three instead
+  // of three round trips per table open.
   std::string footer; if(!ReadAt(t->fd_,t->bytes-48,48,footer)) return Status::IOError;
   Footer f;auto s=Metadata(footer,t->bytes,f);if(s!=Status::Ok) return s;
-  std::string index,filter;if(!ReadAt(t->fd_,f.io,f.is,index)||!ReadAt(t->fd_,f.fo,f.fs,filter)) return Status::IOError;
-  s=IndexRead(index,f.fo,t->index_);if(s!=Status::Ok) return s;
-  std::string_view tail(filter.data()+filter.size()-4,4);uint64_t crc;Number(tail,crc,4);filter.resize(filter.size()-4);if(CRC(filter)!=crc) return Status::Corruption;t->bloom_=Bloom(std::move(filter));
+  std::string trailer;
+  if(!ReadAt(t->fd_,f.fo,t->bytes-f.fo,trailer)) return Status::IOError;
+  std::string_view index_view(trailer.data()+(f.io-f.fo),f.is),filter_view(trailer.data(),f.fs);
+  s=IndexRead(index_view,f.fo,t->index_);if(s!=Status::Ok) return s;
+  std::string filter(filter_view.substr(0,filter_view.size()-4));
+  {std::string_view tail(filter_view.substr(filter_view.size()-4));uint64_t crc;Number(tail,crc,4);if(CRC(filter)!=crc) return Status::Corruption;}
+  t->bloom_=Bloom(std::move(filter));
   Cache none(0);std::shared_ptr<const std::vector<Record>> first;s=t->ReadBlock(0,none,first);if(s!=Status::Ok||first->empty()) return Status::Corruption;
   t->first=first->front().key;t->last=t->index_.back().last;out=std::move(t);return Status::Ok;
 }
@@ -75,6 +82,34 @@ Status Table::Get(std::string_view key,Cache& cache,Record& out) const {
   return Status::NotFound;
 }
 Status Table::Rows(Cache& cache,std::vector<Record>& out) const {for(size_t i=0;i<index_.size();++i) {std::shared_ptr<const std::vector<Record>> rows;auto s=ReadBlock(i,cache,rows);if(s!=Status::Ok) return s;out.insert(out.end(),rows->begin(),rows->end());}return Status::Ok;}
+void Table::Cursor::SeekToFirst() {
+  status_=Status::Ok;rows_.reset();pos_=0;block_=0;
+  if(!table_||table_->index_.empty()) return;
+  status_=table_->ReadBlock(0,*cache_,rows_);
+  if(status_!=Status::Ok) rows_.reset();
+}
+void Table::Cursor::Seek(std::string_view key) {
+  status_=Status::Ok;rows_.reset();pos_=0;block_=0;
+  if(!table_||table_->index_.empty()||table_->last.compare(key)<0) return;
+  const auto& index=table_->index_;
+  size_t lo=0,hi=index.size();
+  while(lo<hi) {size_t mid=(lo+hi)/2;if(index[mid].last.compare(key)<0)lo=mid+1;else hi=mid;}
+  if(lo>=index.size()) return;
+  block_=lo;
+  status_=table_->ReadBlock(block_,*cache_,rows_);
+  if(status_!=Status::Ok) {rows_.reset();return;}
+  size_t a=0,b=rows_->size();
+  while(a<b) {size_t mid=(a+b)/2;if((*rows_)[mid].key.compare(key)<0)a=mid+1;else b=mid;}
+  pos_=a;
+}
+void Table::Cursor::Next() {
+  if(status_!=Status::Ok||!rows_||pos_>=rows_->size()) return;
+  if(++pos_<rows_->size()) return;
+  if(++block_>=table_->index_.size()) {rows_.reset();return;}
+  status_=table_->ReadBlock(block_,*cache_,rows_);
+  pos_=0;
+  if(status_!=Status::Ok) rows_.reset();
+}
 Status Table::Validate(std::string_view bytes) {
   if(bytes.size()<48)return Status::Corruption;
   Footer f;std::vector<BlockIndex> index;auto s=Metadata(bytes,bytes.size(),f);if(s!=Status::Ok)return s;

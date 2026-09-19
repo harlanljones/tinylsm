@@ -17,14 +17,16 @@ Status Engine::Write(std::string_view key,std::string_view value,bool deleted) {
   auto row=Record{std::string(key),std::string(value),0,deleted};
   // WAL append under wal_mu_ only: readers hold mu_ shared and are never
   // blocked by the write syscall. Stamps are assigned inside the same critical
-  // section, so WAL order is exactly stamp order.
+  // section, so WAL order is exactly stamp order. The append is positional
+  // (WriteAt): the segment was pre-sized at creation, so no put extends
+  // i_size and every fsync is overwrite-class.
   {
     std::lock_guard<std::mutex> wl(wal_mu_);
     if(error_.load(std::memory_order_relaxed)!=Status::Ok) return error_;
     row.stamp=std::max(stamp_.load(std::memory_order_relaxed)+1,NowNanos());
     stamp_.store(row.stamp,std::memory_order_relaxed);
     ++inflight_;
-    if(!WriteAll(wal_,Encode(row))||(WalSyncMode(options_)==SyncMode::Fsync&&!Durable(wal_))) {
+    if(AppendWal(Encode(row))!=Status::Ok) {
       --inflight_;inflight_cv_.notify_all();
       error_.store(Status::IOError,std::memory_order_relaxed);return Status::IOError;
     }
@@ -51,6 +53,36 @@ Status Engine::Write(std::string_view key,std::string_view value,bool deleted) {
   }
   return Status::Ok;
 }
+uint64_t Engine::WalCapacity() const {
+  // WAL bytes/record (19 + key + value) are always fewer than memtable
+  // bytes/record (~208 + key + value), so a segment sized at the memtable
+  // budget plus slack can never overflow before rotation. The slack covers
+  // the in-flight record that crosses the threshold.
+  return options_.memtable_size_bytes + 65536;
+}
+int Engine::CreateWal(uint64_t id) {
+  uint64_t capacity=WalCapacity();
+  int fd=::open(Path(id,".wal").c_str(),O_CREAT|O_EXCL|O_WRONLY,0644);
+  if(fd<0) return -1;
+  if(::ftruncate(fd,static_cast<off_t>(capacity))!=0) capacity=std::numeric_limits<uint64_t>::max();
+  wal_capacity_=capacity;
+  wal_offset_=0;
+  return fd;
+}
+Status Engine::AppendWal(const std::string& encoded) {
+  // wal_mu_ held by the caller.
+  if(!WriteAt(wal_,wal_offset_,encoded,wal_capacity_)) {
+    // Safety valve for the impossible: grow the segment once rather than
+    // lose the write (correct, just i_size-extending like the old design).
+    uint64_t grown=wal_offset_+encoded.size()+65536;
+    if(::ftruncate(wal_,static_cast<off_t>(grown))!=0) return Status::IOError;
+    wal_capacity_=grown;
+    if(!WriteAt(wal_,wal_offset_,encoded,wal_capacity_)) return Status::IOError;
+  }
+  wal_offset_+=encoded.size();
+  if(WalSyncMode(options_)==SyncMode::Fsync&&!Durable(wal_)) return Status::IOError;
+  return Status::Ok;
+}
 Status Engine::Rotate(std::unique_lock<std::shared_mutex>& lock) {
   if(active_->Bytes()==0) return Status::Ok;
   // One rotation at a time. If another writer is already rotating (it released
@@ -68,16 +100,28 @@ Status Engine::Rotate(std::unique_lock<std::shared_mutex>& lock) {
   }
   lock.lock();
   uint64_t id=next_id_++;
-  int fd=::open(Path(id,".wal").c_str(),O_CREAT|O_EXCL|O_WRONLY|O_APPEND,0644);
-  if(fd<0) return error_=Status::IOError;
+  uint64_t capacity=WalCapacity();
+  // File creation + durability I/O run WITHOUT mu_: the new file is not yet
+  // visible to any other thread, and fdatasync on the old WAL races safely
+  // with concurrent positional appends (each append carries its own offset
+  // under wal_mu_). Previously this I/O held exclusive mu_, stalling every
+  // writer for milliseconds per rotation on rotational media — the durable
+  // p99 tail. Only the Manifest publish below needs the lock.
+  lock.unlock();
+  int fd=::open(Path(id,".wal").c_str(),O_CREAT|O_EXCL|O_WRONLY,0644);
+  if(fd>=0&&::ftruncate(fd,static_cast<off_t>(capacity))!=0) capacity=std::numeric_limits<uint64_t>::max();
+  bool files_ok=fd>=0&&Durable(wal_)&&Durable(fd)&&SyncDirectory(options_.db_path);
+  lock.lock();
+  if(!files_ok) {if(fd>=0)::close(fd);return error_=Status::IOError;}
   auto wals=wals_;wals.push_back(id);
-  if(!Durable(wal_)||!Durable(fd)||!SyncDirectory(options_.db_path)) {::close(fd);return error_=Status::IOError;}
   auto s=Manifest(wals,tables_);
   if(s!=Status::Ok) {::close(fd);return error_=s;}
   pending_.push_back({active_wal_,active_});active_=std::make_shared<MemTable>();
   // The fd swap must hold wal_mu_ as well as mu_: a concurrent writer may be
-  // appending to wal_ under wal_mu_ without holding mu_.
-  {std::lock_guard<std::mutex> wl(wal_mu_);::close(wal_);wal_=fd;}
+  // appending to wal_ under wal_mu_ without holding mu_. wal_offset_ resets
+  // here — under wal_mu_ — so an append can never read the reset offset
+  // while still writing to the old file.
+  {std::lock_guard<std::mutex> wl(wal_mu_);::close(wal_);wal_=fd;wal_offset_=0;wal_capacity_=capacity;}
   active_wal_=id;wals_=std::move(wals);
   Publish();
   changed_.notify_all();return Status::Ok;
@@ -86,7 +130,7 @@ void Engine::SortTables() {std::sort(tables_.begin(),tables_.end(),[](auto& a,au
 Status Engine::Merge(const std::vector<std::shared_ptr<Table>>& inputs,const std::vector<std::shared_ptr<Table>>& below,std::vector<Record>& rows) {
   rows.clear();
   std::vector<Record> all;
-  for(auto& table:inputs) {auto s=table->Rows(cache_,all);if(s!=Status::Ok) return s;}
+  for(auto& table:inputs) {auto s=table->Rows(no_cache_,all);if(s!=Status::Ok) return s;}
   std::stable_sort(all.begin(),all.end(),[](auto& a,auto& b){return a.key<b.key||(a.key==b.key&&a.stamp>b.stamp);});
   Record found;
   for(size_t i=0;i<all.size();++i) {
@@ -95,7 +139,7 @@ Status Engine::Merge(const std::vector<std::shared_ptr<Table>>& inputs,const std
     if(row.deleted) {
       // Keep the tombstone while any older copy may exist at or below the output level.
       bool keep=false;
-      for(auto& table:below) if(table->Get(row.key,cache_,found)==Status::Ok) {keep=true;break;}
+      for(auto& table:below) if(table->Get(row.key,no_cache_,found)==Status::Ok) {keep=true;break;}
       if(!keep) continue;
     }
     rows.push_back(row);
@@ -123,6 +167,21 @@ void Engine::Select(bool manual,unsigned& level,bool& all_l0,std::vector<std::sh
   std::string first=inputs.front()->first,last=inputs.front()->last;
   for(auto& t:inputs){first=std::min(first,t->first);last=std::max(last,t->last);}
   for(auto& t:tables_)if(t->level==level+1&&t->first<=last&&t->last>=first)inputs.push_back(t);
+}
+// Select's trigger conditions without building the input lists: cheap enough
+// to evaluate on every CompactWorker wakeup so a flush completing mid-storm
+// starts a compaction pass immediately instead of at the next 200ms tick.
+bool Engine::AutoWorkAvailable() const {
+  std::array<uint64_t,64> sizes{};size_t l0=0;
+  for(auto& t:tables_) {sizes[t->level]+=t->bytes;if(t->level==0)++l0;}
+  if(l0>=4) return true;
+  uint64_t capacity=std::max<uint64_t>(options_.memtable_size_bytes*10,4096);
+  for(unsigned l=1;l<63;++l) {
+    if(sizes[l]>capacity) return true;
+    capacity*=10;
+    if(capacity>UINT64_MAX/10) break;
+  }
+  return false;
 }
 // Flushes the oldest immutable MemTable into a Level 0 SST. Requires mu_; the
 // long I/O runs with mu_ released so writers and readers are never stalled.
@@ -158,9 +217,18 @@ void Engine::FlushWorker() {
 }
 // Runs at most one compaction pass. Requires mu_; the merge and the SST writes
 // run with mu_ released. did_work reports whether files were actually merged.
+//
+// There is deliberately NO "wait until flushes drain" guard here: inputs are
+// snapshotted under mu_ and both FlushFront and CompactPass re-read tables_
+// under mu_ at publish time, applying set-deltas with disjoint fresh file
+// ids, so a compaction merging L0->L1 composes safely with a concurrent
+// flush adding a new L0. Gating compaction on an empty pending_ queue starved
+// it exactly when it was needed most — sustained ingest kept pending_
+// non-empty, L0 piled up unbounded (55+ files in a 2s storm), and every read,
+// scan, and reopen paid the overlap tax. Compaction now runs alongside
+// flushes; a file created mid-merge is simply picked up by the next pass.
 Status Engine::CompactPass(std::unique_lock<std::shared_mutex>& lock,bool manual,bool& did_work) {
   did_work=false;
-  if(!pending_.empty()) return Status::Ok;
   unsigned level=0;bool all_l0=false;
   std::vector<std::shared_ptr<Table>> inputs;
   Select(manual,level,all_l0,inputs);
@@ -198,7 +266,10 @@ Status Engine::CompactPass(std::unique_lock<std::shared_mutex>& lock,bool manual
 void Engine::CompactWorker() {
   std::unique_lock lock(mu_);
   while(!stop_) {
-    changed_.wait_for(lock,std::chrono::milliseconds(200),[&]{return stop_||(manual_requested_>compact_done_&&pending_.empty());});
+    // Wake promptly on flush completion (FlushFront notifies): with the
+    // pending_ gate gone, automatic L0 work starts at once instead of at the
+    // next 200ms tick, which is what keeps L0 bounded during a write storm.
+    changed_.wait_for(lock,std::chrono::milliseconds(200),[&]{return stop_||manual_requested_>compact_done_||AutoWorkAvailable();});
     if(stop_) break;
     bool manual=manual_requested_>compact_done_;
     bool did_work=false;
@@ -223,7 +294,7 @@ Status Engine::Get(std::string_view key,std::string& value) {
   auto lookup=[&](const std::shared_ptr<Version>& v, Record& row)->Status {
     if(v->active->Get(key,row)) return row.deleted?Status::NotFound:(value=std::move(row.value),Status::Ok);
     for(auto& mem:v->immutables) if(mem->Get(key,row)) return row.deleted?Status::NotFound:(value=std::move(row.value),Status::Ok);
-    for(auto& table:v->tables) {auto s=table->Get(key,cache_,row);if(s==Status::Ok)return row.deleted?Status::NotFound:(value=std::move(row.value),Status::Ok);if(s!=Status::NotFound)return s;}
+    for(auto& table:v->tables) {auto s=table->Get(key,*cache_,row);if(s==Status::Ok)return row.deleted?Status::NotFound:(value=std::move(row.value),Status::Ok);if(s!=Status::NotFound)return s;}
     return Status::NotFound;
   };
   Record row;
@@ -267,48 +338,130 @@ Status Engine::Compact() {
   return error_;
 #endif
 }
-std::unique_ptr<DB::Iterator> Engine::NewIterator() {
-  // K-way merge over sorted sources from a lock-free Version snapshot.
-  // Every source is already ordered key-ascending, stamp-descending within a
-  // key, so the first record seen per key is the newest version and no map or
-  // re-sort is needed: O(n log k) instead of the old O(n log n) std::map.
-  auto v = version_.load(std::memory_order_acquire);
-  struct Source {std::vector<Record> rows;size_t pos=0;};
-  std::vector<Source> sources;
-  sources.push_back({v->active->Rows()});
-  for(auto& mem:v->immutables) sources.push_back({mem->Rows()});
-  for(auto& table:v->tables) {std::vector<Record> rows;table->Rows(cache_,rows);sources.push_back({std::move(rows)});}
-  auto worse=[&](const Source& a,const Source& b) {
-    const Record& ra=a.rows[a.pos];const Record& rb=b.rows[b.pos];
+// Lazy k-way merge over a Version snapshot: the eager NewIterator materialized
+// every source into vectors up front (O(n) construction, 2-3x string copies
+// per record), so a 50-key YCSB-E scan paid a full-database merge (~4ms) and
+// full-scan construction dominated total time. This iterator positions one
+// cursor per source (skiplist seek / SST block-index seek + one block decode)
+// and merges heap-ordered, so construction is O(k log k) for k sources and
+// each Next() is O(log k). A short scan touches only the blocks it walks.
+//
+// Correctness: stamps are globally strictly increasing (Write assigns
+// max(stamp+1, NowNanos())), and each source holds at most one version per
+// key (memtable Rows() and SST build/merge dedupe to newest), so the heap's
+// (key asc, stamp desc) order presents each key's newest version first. The
+// first sighting decides visibility: tombstone → the whole key group is
+// skipped; otherwise older versions are skipped as shadowed.
+struct SourceCursor {
+  virtual ~SourceCursor()=default;
+  virtual void SeekToFirst()=0;
+  virtual void Seek(std::string_view key)=0;
+  virtual void Next()=0;
+  virtual bool Valid() const=0;
+  virtual const Record& Row() const=0;
+  virtual Status status() const=0;
+};
+struct MemSource final:SourceCursor {
+  MemTable::Cursor cursor;
+  explicit MemSource(MemTable::Cursor c):cursor(std::move(c)) {}
+  void SeekToFirst() override {cursor.SeekToFirst();}
+  void Seek(std::string_view key) override {cursor.Seek(key);}
+  void Next() override {cursor.Next();}
+  bool Valid() const override {return cursor.Valid();}
+  const Record& Row() const override {return cursor.Row();}
+  Status status() const override {return cursor.status();}
+};
+struct SstSource final:SourceCursor {
+  Table::Cursor cursor;
+  explicit SstSource(Table::Cursor c):cursor(std::move(c)) {}
+  void SeekToFirst() override {cursor.SeekToFirst();}
+  void Seek(std::string_view key) override {cursor.Seek(key);}
+  void Next() override {cursor.Next();}
+  bool Valid() const override {return cursor.Valid();}
+  const Record& Row() const override {return cursor.Row();}
+  Status status() const override {return cursor.status();}
+};
+class MergeIterator final:public DB::Iterator {
+  // Pinned snapshot pieces: the shared_ptrs keep every memtable and SST alive
+  // for the iterator's lifetime (the Version itself need not be retained).
+  std::vector<std::shared_ptr<MemTable>> mems_;
+  std::vector<std::shared_ptr<Table>> tables_;
+  std::shared_ptr<Cache> cache_;             // decoded blocks stay alive
+  std::vector<std::unique_ptr<SourceCursor>> sources_;
+  std::vector<size_t> heap_;
+  Status status_=Status::Ok;
+  bool Worse(size_t a,size_t b) const {
+    const Record& ra=sources_[a]->Row();
+    const Record& rb=sources_[b]->Row();
     if(ra.key!=rb.key) return ra.key>rb.key;
     return ra.stamp<rb.stamp;
-  };
-  std::vector<size_t> heap;
-  for(size_t i=0;i<sources.size();++i) if(!sources[i].rows.empty()) heap.push_back(i);
-  auto sift_down=[&](size_t i) {
-    for(;;) {size_t l=2*i+1,r=l+1,m=i;
-      if(l<heap.size()&&worse(sources[heap[m]],sources[heap[l]]))m=l;
-      if(r<heap.size()&&worse(sources[heap[m]],sources[heap[r]]))m=r;
-      if(m==i) break;
-      std::swap(heap[i],heap[m]); i=m;
-      }
-  };
-  for(size_t i=heap.size()/2;i-->0;) sift_down(i);
-  std::vector<Record> rows;
-  std::string last_key;
-  bool first=true;
-  while(!heap.empty()) {
-    Source& top=sources[heap[0]];
-    Record& row=top.rows[top.pos];
-    bool newest=first||row.key!=last_key;
-    if(newest) {
-      last_key=row.key;first=false;
-      if(!row.deleted) rows.push_back(std::move(row));
-    }
-    if(++top.pos<top.rows.size()) sift_down(0);
-    else {heap[0]=heap.back();heap.pop_back();if(!heap.empty())sift_down(0);}
   }
-  return std::make_unique<Snapshot>(std::move(rows),Status::Ok);
+  void SiftDown(size_t i) {
+    for(;;) {
+      size_t l=2*i+1,r=l+1,m=i;
+      if(l<heap_.size()&&Worse(heap_[m],heap_[l]))m=l;
+      if(r<heap_.size()&&Worse(heap_[m],heap_[r]))m=r;
+      if(m==i) break;
+      std::swap(heap_[i],heap_[m]);i=m;
+    }
+  }
+  void NoteStatus(Status s) {if(status_==Status::Ok&&s!=Status::Ok)status_=s;}
+  void PopTop() {
+    heap_[0]=heap_.back();heap_.pop_back();
+    if(!heap_.empty())SiftDown(0);
+  }
+  // Advance past every version of the top key in every source sharing it.
+  void SkipKey() {
+    std::string key=sources_[heap_[0]]->Row().key;
+    do {
+      SourceCursor* top=sources_[heap_[0]].get();
+      top->Next();
+      NoteStatus(top->status());
+      if(!top->Valid())PopTop();
+      else SiftDown(0);
+    } while(!heap_.empty()&&sources_[heap_[0]]->Row().key==key);
+  }
+  void Normalize() {
+    while(status_==Status::Ok&&!heap_.empty()&&sources_[heap_[0]]->Row().deleted)SkipKey();
+  }
+  void Rebuild() {
+    heap_.clear();
+    for(size_t i=0;i<sources_.size();++i) {
+      NoteStatus(sources_[i]->status());
+      if(sources_[i]->Valid())heap_.push_back(i);
+    }
+    for(size_t i=heap_.size()/2;i-->0;)SiftDown(i);
+    Normalize();
+  }
+ public:
+  MergeIterator(std::vector<std::shared_ptr<MemTable>> mems,std::vector<std::shared_ptr<Table>> tables,
+                std::shared_ptr<Cache> c)
+    :mems_(std::move(mems)),tables_(std::move(tables)),cache_(std::move(c)) {
+    sources_.reserve(mems_.size()+tables_.size());
+    for(auto& mem:mems_) sources_.push_back(std::make_unique<MemSource>(mem->NewCursor()));
+    for(auto& table:tables_) sources_.push_back(std::make_unique<SstSource>(table->NewCursor(cache_)));
+  }
+  bool Valid() const override {return status_==Status::Ok&&!heap_.empty();}
+  void SeekToFirst() override {status_=Status::Ok;for(auto& s:sources_)s->SeekToFirst();Rebuild();}
+  void Seek(std::string_view key) override {status_=Status::Ok;for(auto& s:sources_)s->Seek(key);Rebuild();}
+  void Next() override {if(!Valid())return;SkipKey();Normalize();}
+  std::string_view Key() const override {return Valid()?std::string_view(sources_[heap_[0]]->Row().key):std::string_view{};}
+  std::string_view Value() const override {return Valid()?std::string_view(sources_[heap_[0]]->Row().value):std::string_view{};}
+  Status status() const override {return status_;}
+};
+std::unique_ptr<DB::Iterator> Engine::NewIterator() {
+  // One cursor per snapshot source, heap-merged lazily: construction seeks
+  // (skiplist walk, block-index binary search + one block decode each) and
+  // the walk decodes only blocks it visits — O(k log k) setup, O(log k) per
+  // Next(), instead of the old O(n) eager materialization.
+  auto v = version_.load(std::memory_order_acquire);
+  std::vector<std::shared_ptr<MemTable>> mems;
+  mems.reserve(1+v->immutables.size());
+  mems.push_back(v->active);
+  for(auto& mem:v->immutables) mems.push_back(mem);
+  auto it = std::make_unique<MergeIterator>(std::move(mems),v->tables,cache_);
+  it->SeekToFirst();
+  return it;
 }
 Statistics Engine::Stats() const {
   // stats_ counters are updated under mu_; take a shared lock only for that
@@ -317,7 +470,7 @@ Statistics Engine::Stats() const {
   {std::shared_lock lock(mu_); s=stats_;}
   auto v = version_.load(std::memory_order_acquire);
   s.reads=reads_.load();s.writes=writes_.load();s.logical_bytes=logical_.load();
-  s.cache_hits=cache_.hits.load();s.cache_misses=cache_.misses.load();
+  s.cache_hits=cache_->hits.load();s.cache_misses=cache_->misses.load();
   s.active_bytes=v->active->Bytes();s.immutable_count=v->immutables.size();
   s.level_files.assign(64,0);for(auto& t:v->tables) ++s.level_files[t->level];
   while(s.level_files.size()>1&&s.level_files.back()==0)s.level_files.pop_back();

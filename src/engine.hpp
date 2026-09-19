@@ -33,7 +33,16 @@ class Engine final:public DB {
   std::vector<std::shared_ptr<Table>> tables_;
   std::vector<uint64_t> wals_;
   std::atomic<std::shared_ptr<Version>> version_{std::make_shared<Version>(Version{active_,{},{}})};
-  Cache cache_;
+  // Shared (not by-value) so lazy iterators keep decoded blocks alive even
+  // if the DB is destroyed before they are — same contract as LevelDB, where
+  // DeleteIterators must precede DB destruction, except here it is enforced
+  // by ownership rather than documentation.
+  std::shared_ptr<Cache> cache_;
+  // Compaction reads through a disabled cache on purpose: a merge pass scans
+  // whole tables that the foreground reader will likely never touch, so
+  // caching them would evict the reader's hot blocks and inflate read tail
+  // latency under write pressure. Bulk merge I/O is still OS-page-cache hot.
+  Cache no_cache_{0};
   int wal_=-1,lock_=-1;
   uint64_t active_wal_=0,manual_requested_=0,compact_done_=0;
   // WAL append runs outside mu_ so readers never queue behind the write
@@ -43,16 +52,22 @@ class Engine final:public DB {
   std::mutex wal_mu_,rotate_mu_;
   std::condition_variable inflight_cv_;
   size_t inflight_=0;
+  // Pre-sized WAL segments (see WriteAt): the active WAL is ftruncate-sized
+  // at creation so per-put appends never extend i_size, and wal_offset_ is
+  // the positional-append cursor guarded by wal_mu_.
+  uint64_t wal_offset_=0,wal_capacity_=0;
   std::atomic<uint64_t> stamp_{0},next_id_{1};
   std::atomic<Status> error_{Status::Ok};
   bool stop_=false;
   Statistics stats_;
   std::thread flush_thread_,compact_thread_;
-  std::vector<Record> rows_scratch_;
   std::string Path(uint64_t id,std::string_view extension) const {return options_.db_path+"/"+std::to_string(id)+std::string(extension);}
   void Publish(); // mu_ held: publish a new Version for lock-free readers
   Status Manifest(const std::vector<uint64_t>& wals,const std::vector<std::shared_ptr<Table>>& tables);
   Status Load();
+  int CreateWal(uint64_t id); // sized segment, wal_offset_/wal_capacity_ reset; -1 on error
+  Status AppendWal(const std::string& encoded); // wal_mu_ held: positional append + optional fsync
+  uint64_t WalCapacity() const; // segment bytes: memtable budget + slack (never overflows pre-rotation)
   Status Rotate(std::unique_lock<std::shared_mutex>& lock); // mu_ held, WAL is synced before publication
   Status Write(std::string_view key,std::string_view value,bool deleted);
   Status FlushFront(std::unique_lock<std::shared_mutex>& lock); // mu_ held: flush the oldest immutable
@@ -61,12 +76,13 @@ class Engine final:public DB {
   void FlushWorker();
   void CompactWorker();
   void Select(bool manual,unsigned& level,bool& all_l0,std::vector<std::shared_ptr<Table>>& inputs) const; // requires mu_
+  bool AutoWorkAvailable() const; // requires mu_: Select's trigger without the input lists
   Status Merge(const std::vector<std::shared_ptr<Table>>& inputs,const std::vector<std::shared_ptr<Table>>& below,std::vector<Record>& rows);
   Status PublishManifest();
   void RetireWAL(uint64_t id);
   void SortTables();
  public:
-  explicit Engine(Options o):options_(std::move(o)),cache_(options_.block_cache_size_bytes){}
+  explicit Engine(Options o):options_(std::move(o)),cache_(std::make_shared<Cache>(options_.block_cache_size_bytes)){}
   Status Init();
   ~Engine() override;
   Status Put(std::string_view k,std::string_view v) override {return Write(k,v,false);}

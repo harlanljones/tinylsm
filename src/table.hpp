@@ -63,6 +63,29 @@ class Table {
   Status Get(std::string_view key,Cache& cache,Record& out) const;
   Status Rows(Cache& cache,std::vector<Record>& out) const;
   static Status Validate(std::string_view bytes);
+  // Block-granular forward cursor for the lazy merge iterator. Holds the
+  // current decoded block (shared with the block cache) so Key()/Value()
+  // views stay valid across Next() calls; I/O or CRC errors surface through
+  // status() and invalidate the cursor. The shared Cache ownership keeps
+  // decoded blocks alive even if the DB (and its cache) is destroyed first.
+  class Cursor {
+    const Table* table_=nullptr;
+    std::shared_ptr<Cache> cache_;
+    size_t block_=0;
+    std::shared_ptr<const std::vector<Record>> rows_;
+    size_t pos_=0;
+    Status status_=Status::Ok;
+   public:
+    Cursor()=default;
+    Cursor(const Table* t,std::shared_ptr<Cache> c):table_(t),cache_(std::move(c)) {}
+    void SeekToFirst();
+    void Seek(std::string_view key);
+    void Next();
+    bool Valid() const {return status_==Status::Ok&&rows_&&pos_<rows_->size();}
+    const Record& Row() const {return (*rows_)[pos_];}
+    Status status() const {return status_;}
+  };
+  Cursor NewCursor(std::shared_ptr<Cache> cache) const {return Cursor(this,std::move(cache));}
 };
 inline bool ReadAt(int fd,uint64_t offset,size_t len,char* out) {size_t done=0;while(done<len) {auto n=::pread(fd,out+done,len-done,static_cast<off_t>(offset+done));if(n<0&&errno==EINTR) continue;if(n<=0) return false;done+=static_cast<size_t>(n);}return true;}
 inline bool ReadAt(int fd,uint64_t offset,size_t len,std::string& out) {out.resize(len);return ReadAt(fd,offset,len,out.data());}
