@@ -89,8 +89,11 @@
         row drops each SSTable from the page cache with <code>posix_fadvise(POSIX_FADV_DONTNEED)</code>
         before the read. Add <code>competitors.jsonl</code> (same record shape plus an
         <code>"engine"</code> field) to overlay another engine on the same buffered workload.
-        The fsync-priced three-engine run lives in <code>rigorous.jsonl</code>
-        (tinylsm / LevelDB / LMDB) and is printed by <code>scripts/rigorous_table.mjs</code>, not these charts.
+        The fsync-priced interleaved runs live in <code>rigorous.jsonl</code>
+        (tinylsm vs LevelDB / LMDB / SQLite, whichever the machine can build)
+        and are printed by <code>scripts/rigorous_table.mjs</code>, not these charts.
+        The skewed YCSB mix lives in <code>ycsb.jsonl</code>, printed by
+        <code>scripts/ycsb_table.mjs</code>.
       </p>
     </div>
   </section>

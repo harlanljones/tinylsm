@@ -56,7 +56,12 @@ the WAL and the `MANIFEST` exactly as a process restart does on disk.
   Add `competitors.jsonl` with the same record shape plus an `"engine"` field to
   overlay other engines on that same workload.
 * **Rigorous report** — `scripts/bench_rigorous.sh` stages `rigorous.jsonl` and
-  `rigorous_env.json` next to the site. Those are the fsync-priced, shuffled,
-  three-engine numbers (tinylsm / LevelDB / LMDB); they are not plotted here.
-  Print them with `node scripts/rigorous_table.mjs wasm/site/rigorous.jsonl
-  wasm/site/rigorous_env.json`.
+  `rigorous_env.json` next to the site (fsync-priced, shuffled, interleaved
+  trials vs LevelDB + LMDB); `scripts/bench_all.sh` stages the same report
+  shape with whatever engines the machine can build (tinylsm always, SQLite
+  via downloaded amalgamation, LevelDB/LMDB when present). Those runs are not
+  plotted here. Print them with `node scripts/rigorous_table.mjs
+  wasm/site/rigorous.jsonl wasm/site/rigorous_env.json`.
+* **YCSB report** — `scripts/bench_ycsb.sh` stages `ycsb.jsonl` (scrambled-
+  Zipfian A/B/C/D/E/F mix); render it with `node scripts/ycsb_table.mjs
+  reports/ycsb.jsonl`. Not plotted here either.

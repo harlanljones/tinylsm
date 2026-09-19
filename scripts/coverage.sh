@@ -18,8 +18,12 @@ echo "ran $(ctest --test-dir "$build" -N 2>/dev/null | grep -c 'Test #') test bi
 
 mkdir -p "$root/reports"
 set +e
+# --gcov-ignore-parse-errors works around GCC bug 68080 (negative hit counts
+# on headers with inline control flow), which otherwise aborts the report on
+# GCC 13+. It only downgrades parser errors to warnings; coverage is unaffected.
 python3 -m gcovr -r "$root" --object-directory "$build" \
   --filter 'src/' --filter 'include/' --txt --fail-under-line "$threshold" \
+  --gcov-ignore-parse-errors negative_hits.warn_once_per_file \
   | tee "$root/reports/coverage.txt"
 status=${PIPESTATUS[0]}
 set -e
