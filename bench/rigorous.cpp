@@ -299,8 +299,9 @@ int main(int argc, char** argv) {
       ReportLatency(kEngine, trial, "read_under_write", samples, written.load() / wsecs, "writer=buffered");
     }
 
-    // Phase 5: full scan, timed from iterator construction: tinylsm merges at
-    // NewIterator time, so timing only the walk would measure a vector loop.
+    // Phase 5: full scan, timed from iterator construction: construction seeks
+    // every source (skiplist walk, block-index search, first-block decode)
+    // and the walk decodes only visited blocks, so both phases are priced.
     {
       auto start = Clock::now();
       auto it = db->NewIterator();
